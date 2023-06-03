@@ -144,10 +144,10 @@ class MidiController:
         if isinstance(note,Note):
           note = note.value
 	   
-        self._send(mido.Message('note_on', note=note.value, velocity=velocity))
+        self._send(mido.Message('note_on', note=note, velocity=velocity))
 
     def note_off(self, note: int, velocity: int) -> None:
-        self._send(mido.Message('note_off', note=note.value, velocity=velocity))
+        self._send(mido.Message('note_off', note=note, velocity=velocity))
 
     def control_change(self, control:int, value: int) -> None:
         self._send(mido.Message('control_change', control=control, value=value))
@@ -163,7 +163,6 @@ class MidiController:
     
     def sysex(self, data: List[int]) -> None:
         self._send(mido.Message('sysex', data=data))
-        self._send(mido.Message('note_off', note=note.value, velocity=velocity))
 
     def control_change(self, control:int, value: int) -> None:
         self._send(mido.Message('control_change', control=control, value=value))

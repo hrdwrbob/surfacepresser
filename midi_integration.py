@@ -1,4 +1,4 @@
-from midi_controller import  MidiController, Note, Control, Color, Invert
+from midi_controller import  MidiController, Note, Color, Invert
 import logging
 import time
 import asyncio
@@ -11,15 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 
-class Display():
-  pass
 
-class SegmentDisplay(Display):
-  pass
-
-
-class LcdDisplay(Display):
-  pass
   
 class Control():
   _midicontrol = None
@@ -36,7 +28,7 @@ class Control():
                 'id'   :  self._config['deviceid'] }
     for i in self._state.keys():
       if old_state[i] != self._state[i]:
-      	message[i] = self._state[i]
+        message[i] = self._state[i]
     return message
 
   def __init__(self, midicontrol = None,config = None) -> None:
@@ -47,7 +39,7 @@ class Control():
       if msgtype in self._config.keys():
         self._midicontrol.register(self.msg_callback,msgtype,self._config[msgtype])
 
-  def get_state():
+  def get_state(self):
     state = self._state
     return state
 
@@ -66,7 +58,7 @@ class LevelControl(Control):
   
   def recv_message(self,m):
     if m.type == 'control_change':
-        self._state['value'] = value
+        self._state['value'] = m.value
 
 class FaderControl(LevelControl):
   def __init__(self, midicontrol = None,config = None) -> None:
@@ -161,6 +153,37 @@ class SliderControl(LevelControl):
 class KnobControl(LevelControl):
   pass
 
+
+
+
+class Display(Control):
+  pass
+
+class BgrSegmentDisplay(Display):
+  pass
+
+
+class XTOScribbleStrip (Display):
+  _display_settings = dict()
+  def set_text(self,text):
+    self._display_settings['characters'] = text
+    self.update_display()
+  
+  def __init__(self, midicontrol = None,config = None) -> None:
+    self._display_settings['color'] = Color.WHITE
+    self._display_settings['invert'] = Invert.NONE
+    self._display_settings['characters'] = ""
+    super().__init__(midicontrol = midicontrol,config=config)    
+  
+  def update_display(self):
+     self._midicontrol.lcd_display_update(**self._display_settings)
+  
+  def set_color(self,colorname: str):
+    color = getattr(Color,colorname.capitalize())
+    if color is not None:
+      self._display_settings['color'] = color
+
+
    
 class MidiIntegration:
     classmap = {
@@ -169,8 +192,10 @@ class MidiIntegration:
                'level'  : LevelControl,
                'button'  : ButtonControl,
                'jog_wheel' : JogWheelControl,
-               'segment' : SegmentDisplay,
-               'lcdtext' : LcdDisplay,
+               'behringer_segment' : BgrSegmentDisplay,
+               'behringer_one_scribble' : XTOScribbleStrip,
+
+               
               }
   
     def __init__(self, config: dict,callback = None) -> None:
@@ -181,7 +206,14 @@ class MidiIntegration:
         #self._segment_lock = False
         #self._display_lock_seconds = 0
         self._controls = dict()
+        self._displays = dict()
         self._midimap = dict()
+        displays = config.get('displays',dict())
+        for display in displays.keys():
+          displayconfig = displays[display]
+          displayconfig['name'] = display
+          displayconfig['deviceid'] = config['id']
+          self._add_display(display,displayconfig)
         controls = config.get('controls',dict())
         for control in controls.keys():
           controlconfig = controls[control]
@@ -189,16 +221,19 @@ class MidiIntegration:
           controlconfig['deviceid'] = config['id']
           self._add_control(control,controlconfig)
 
+    def _add_display(self,name,displayconfig):
+      newdisplay = self.classmap[displayconfig['type']](self._controller,displayconfig)
+      self._displays[name] = newdisplay
+
     def _add_control(self,name,controlconfig):
       newcontrol = self.classmap[controlconfig['type']](self._controller,controlconfig)
       self._controls[name] = newcontrol
 
-    # If we're not using callback.
-    def get_midi_input(self):
-        for msg in self._controller.get_input():
-            self._handle_midi_input(msg)
+
     async def receive_message(self,message):
       print("midi received",message)
-      if 'value' in message.keys():
+      if 'value' in message.keys() and message['item'] in self._controls.keys():
         self._controls[message['item']].set_value(message['value'])
+      elif 'value' in message.keys() and message['item'] in self._displays.keys():
+        self._displays[message['item']].set_text(message['value'])
       return
