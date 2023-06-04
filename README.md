@@ -4,89 +4,116 @@ Surface Presser is intended to allow you control (and observation) of arbitrary 
 
 It uses asyncio to asynchronously handle the input/output and translation, there is currently no UI at all.
 
-## Setup - MIDI device
+## Setup Controllers - (MIDI devices)
+If you have an already configured device such as:
+* Behringer X touch One
+All you need to do is include the config for that controller.
 
-Midi devices are setup with a YAML file (eg: ```xtouchone.yaml```) detailing all the available controls and displays.
+If you have a different device, you'll need to make a configuration profile for it. More details are available at [Midi Setup](doc/MIDISetup.md)
 
-```yaml
-controller:
-  midiname: 'X-Touch One'
-  id: 'xtouch'
-  controls:
-   next_chan:
-     type: button
-     note: 28
-   prev_chan:
-     type: button
-     note: 27
-   scrub:
-     type: button
-     note: 29
-   fader:
-     type: fader
-     note: 110
-     control: 70
-  displays:
-    fader_1:
-      type:
-
-```
-| Config item | Description |
-| ----------- | ----------- |
-| midiname | Name of the midi device (list them with `mido-ports`) |
-| id | Unique ID of the midi controller (because it will support multiple) |
-| controls | List of controls on the device. |
-
-Control names are arbitrary strings, but I would strongly recommend simply calling them after the labels on the device. This will make it much much easier to correlate. 
-
-Generic control config items
-| Control config item | Description |
-| ----------- | ----------- |
-| type | Type of control. |
-| note | Note value of control (for notes) |
-| control | control value (for control change) |
-
-
-### Types of controls
-* ```rotary``` - Rotary encoder. Has LEDs to show where the value is, and a rotary encoder with a push button
- Note: The button on a rotary encoder is a seperate device and has a seperate entry.
-* ```fader``` -  Fader control - Supports either motorised or non motorised faders.
-The library will still send the commands for a motorised fader, They will be ignored if not supported.
-* ```button`` - Button. 
-| Control config item | Description |
-| ----------- | ----------- |
-| style | Type of button - momentary, or toggle. default is toggle.|
-| light | The button light (if applicable) - always_on, momentary, or state default is state (the state of the button, or the linked function)|
-* ```jogwheel``` - Jog wheel. Goes up and down. wheeeeeeeeeeeee
-
-### Types of displays
- Support is available for behringer segment (timing) displays, and LCD (channel info) because that's what I have. If you know the sysex codes for the displays, adding more is easily done.
-
-* ```Meter```
-For LED level meters. 0-127 - audio level.
-* ```xtouchlcd```
-Supports behringer X touch One LCD. 
-| Sreen config/setting item | Description |
-| ----------- | ----------- |
-| section | Section of the display - top, bottom, or full. There are 7 characters per section. With two seperate entries you can control them seperately.(TODO)|
-| color | Screen color (black, red, green, yellow, blue, magenta, cyan, white)|
-| invert | Invert LCD |
-* ```xtouchsegment```
-Supports behringer X touch One LCD Segment display
-has up to 12 "characters" using a segment font.
-
+There's no reason that surface presser should be limited to MIDI Devices, the design allows it to be used for anything. Likely targets includes stream deck (because I have one) and perhaps other custom/DIY Solutions.
 
 
 ## Setup - external services/libraries
-
 
 ### Pipewire.
 
 Pipewire offers amazing flexiblity at the cost of amazing complexity. I've abstracted away most of the complexity so you can easily control your pipewire devices natively, without using a pulse or alsa abstraction.
 
+example setup:
+```yaml
+pipewire:
+  datamap:
+    volume:
+      from_function: "int(min(x*96,127))" # scitools function string, where x is from midi (0-127) 
+      to_function: "x/96" # scitools function string, where x is from library and return is midi (0-127)
+    volume_mapped_example:
+      map: # This example map shows the mapping of the db on my fader to midi
+        midi:     [0  ,   4,  13,  21, 29,   46,  62,  69,  79, 96, 111, 127]
+        pipewire: [-60, -60, -50, -40, -30, -20, -10, -7.9, -5,  0,  +5, +12]
+        # The map is interpolated, so you need a minimum two values (0 and 127)
+  devices: # Device name map to nice human names
+    'ALSA plug-in [vban_desktop]': 'Desktop'
+    'vban': 'Desktop'
+    'ALSA plug-in [vban_mic_desktop]': 'DeskMic'
+```
+
+
 ### Home Assistant.
 Here we have your classic home assistant integration, because no project would be complete without it. I haven't made it yet, so the project isn't complete.
 
+```
+when there is a home assistant endpoint, the config will be here!
+```
+
+## Setup - linking controls and endpoints.
+When you link a control to an endpoint, It magically sets up a bidirectional link, so that (if supported) the control reflects the status of the action at the endpoint
+
+The basic idea is as follows:
+```yaml
+link: # has to be link, this calls the linker
+  midid: # ID of midi controller
+    control: # named control from midi controller.
+      backend: # backend - eg pipewire, virtual, homeassistant, command
+        action: item # performs action (eg volume/mute/run - depends on backend) on item (eg: "Headphones")
+```
+This tells the linker what the control does, and it makes the connections.
+
+### Magic! Virtual devices
+As part of the linker, to allow you to do much cooler things than control a single item, You can setup a virtual target that allows you to change the target of a button (but the function remains the same).
+
+A virtual target exposes two additional controls - ``next`` and ``prev`` which cycle forwards and backwards through the list.
+
+The configuration is as follows:
+```yaml
+link: # This is part of the linker, so is under the link item.
+  virtual: # This tells the linker to use 
+    volin: # This is the name of the virtual item
+      targets: # This is a list of targets that you can cycle through
+        - target: 'Wless HFmic' # Name of target in the backend
+          text: 'wls HF' # This is the text to display on the screen if configured
+          color: magenta # This is the colour to set on the screen (if applicable)
+          invert: True # This inverts the screen (if applicable)
+        - target: 'DeskMic' 
+      system: pipewire # Currently all targets have to be in the same system
+      display: # This sets up the display to show what the virtual target is set to.
+        xtouch: # This is the midi ID of the device
+          scribble_strip_top # This is the screen - in this case it's a special device which addresses the top half of the scribble strip
+```
+Note that this will do nothing by itself, this needs to be references by linked controls to be functional. eg:
+```yaml
+link: # linker
+  xtouch: # midi ID
+    rotary: # Control name
+      virtual: # Put virtual here, because that's the backend.
+        volume: volin # We define the action here which applies to the item. 
+                      # and we give the virtual target name.
+    rotarybutton: 
+      virtual:
+         next: volin # Here we've used the magic 'next' action which cycles the virtual target.
+```
+What we've done above is use a rotary button that cycles through the different microphones configured in the system, displays the currently selected item, and allows you to adjust the volume up and down. Due to the magic of the linker, when the target changes, the control will change to indicate the level of the new target.
 
 
-## Setup - linking controls and 
+## Running Surface Presser
+```
+usage: surfacepresser.py [-h] [--config [CONFIG ...]] [--miditest [MIDI Controller]] [--midilist]
+
+Surface Presser - Midi controller interface.
+
+options:
+  -h, --help            show this help message and exit
+  --config [CONFIG ...]
+                        yaml config files
+  --miditest [MIDI Controller]
+                        test mode - show midi commands only
+  --midilist            list MIDI controllers
+  ```
+The default config file is surfacepresser.yaml
+
+surface presser doesn't accept any input on the console, It will have some logging outputs, but it runs in the background as a control and status translation application.
+
+## The Future?
+
+It's currently pretty horrific to configure, perhaps there could be a nice click and drag GUI. Something where you take a picture of your midi controller and it auto detects buttons, reads the labels, and lets you adjust it, before then allowing you to link it. Close to zero chance of this happening, but you never know.
+

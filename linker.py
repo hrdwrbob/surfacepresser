@@ -1,4 +1,7 @@
 import logging
+from scitools.StringFunction import StringFunction
+from scipy.interpolate import interp1d
+
 class Vividict(dict):
     def __missing__(self, key):
         value = self[key] = type(self)() # retain local pointer to value
@@ -13,7 +16,11 @@ class Linker:
     self._config = config
     self._virtuals.update(config['link'].get('virtual',dict()))
     self._callback = callback
-    
+    # set virtual device default
+    for virtname,virtualbackend in self._virtuals.items():
+      self.update_virt_target(virtname,0)
+      for targetdetails in virtualbackend['targets']:
+        virtualbackend[targetdetails['target']] = dict()
     for controller in config['link'].keys():
       if controller == 'virtual':
         continue
@@ -22,25 +29,19 @@ class Linker:
     # We map the normal controls first so we can get the links when we backlink the virtuals.
     for virtcontrol,virtsetup in config['link']['virtual'].items():
           for target in virtsetup['targets']:
-            realdetail = self._links['virtual'][virtcontrol]
-            realaction = list(realdetail.keys())[0] # volume
-            realcontroldetail = realdetail[realaction] # { 'xtouch' : prev_chan }
-            realcontroller = list(realcontroldetail.keys())[0] # 'xtouch' 
-            realcontrol = realcontroldetail[realcontroller] # 'prev_chan' 
-            
+            realdetail = self._links['virtual'][virtcontrol] 
+            realaction,realcontroldetail = list(realdetail.items())[0] # volume, { 'xtouch' : prev_chan }
+            realcontroldetail = realdetail[realaction] # 
+            realcontroller, realcontrol = list(realcontroldetail.items())[0] # 'xtouch', 'prev_chan
                         #pipewire              'HDMI 5.1'
-            self._links[virtsetup['system']][target['target']][realaction][realcontroller] = realcontrol
+            self._links[virtsetup['system']][target['target']][realaction]['virtual'] = virtcontrol
 
   #def self.add_virtual_backlink():
   
   def add_links(self,controller,control,endpoint):
      
-     interface = list(endpoint.keys())[0] # eg pipewire
-     actiondetail = list(endpoint.values())[0] # eg volume: 'HDMI 5.1'
-
-       
-     action = list(actiondetail.keys())[0] # volume
-     itemname = list(actiondetail.values())[0] # 'HDMI 5.1'
+     (interface,actiondetail) = list(endpoint.items())[0] # eg pipewire, { volume: 'HDMI 5.1'}
+     (action,itemname) = list(actiondetail.items())[0] # volume, 'HDMI 5.1'
      # Forward link (from the midi control surface to the endpoint
      self._links[controller][control] = endpoint
      # reverse link (i.e. from the library to midi)
@@ -69,8 +70,20 @@ class Linker:
   def update_virt_target(self,virttarget,index):
     virtdetails = self._virtuals[virttarget]
     target = virtdetails['targets'][index] 
-    logging.debug('Virtal {} set to {}'.format(virttarget,target['target']))
+    textname = target.get('text',"")
+    if textname != "":
+      textname = ' ({})'.format(textname)
+    logging.debug('Virtual {} set to {}'.format(virttarget,target['target']) + textname)
     virtdetails['_current'] = index
+    # Now update all relevant controls
+    message = self._virtuals[virttarget].get(target['target'],dict()).get('cachedmessage',None)
+    if message is not None:
+      for controldetail in self._links['virtual'][virttarget].values():
+        (controller,control) = list(controldetail.items())[0]
+        # Get action for the control.
+        action = list(self._links[controller][control]['virtual'].keys())[0]
+        outmessage = self.translate_to_midi(message,(controller,control),action)
+        self.send_message(outmessage,'midi')
     self.update_virtual_links(virtdetails,index)
     
   def get_virt_target(self,virttarget):
@@ -115,69 +128,95 @@ class Linker:
        # Action will be eg { 'pipewire' : { 'volume' : 'HDMI 5.1' }
        id = message.get('id',None)
        if id is None:
-         logging.fatal("No ID in message:",message)
+         logging.error("No ID in message:",message)
+         return
        action = self._links[message['id']][message['item']]
-       print("action",action)
        if not message.get('pressed',True):
          return
        if action != {} and list(action.keys())[0] == "virtual":
-          print("virtual mapping")
           action = self.get_real_action(list(action.values())[0])
        # once translated to a real action, we keep going normally.
        if action != {}:
-         action.update(self.translate_to_target(message))
+         action.update(self.translate_to_target(message,action))
          self.send_message(action,list(action.keys())[0])
      else:
-       
        actions = self._links.get(message['source'],dict()).get(message['item'],None)
        if actions is None:
          return
        
-       for action in actions.values(): # eg, volume,mute. all we really need are the values
-         # action is { 'controller' : 'control' }
-         control = list(action.values())[0]
-         controller = list(action.keys())[0]
-         if controller == 'virtual':
+       for action, actiondetail in actions.items(): # ignore action and send to all
+         controller, control = list(actiondetail.items())[0] # { xtouch : prev_chan }
+         if controller == 'virtual': 
+           # Get the current target to see if we need to update now
+           logging.debug("received message for item {} to virtual target {}".format(message['item'],control))
            target = self.get_virt_target(control) # Target is { 'backend', 'device'}
-           # Who knows wtf is going on here.
-           device = list(action.values())[0]
-           backend = list(action.keys())[0]
+           backend, device = list(target.items())[0]
            # we cache it regardless, because we can cycle back
-           self._virtuals[control]['cachedmessage'] = message 
-           if (device == message['item']): # The current selection is 
-             # now we need to get the actual control name to send it to
-             controller = 'TODO'
-           else:  
-             self._virtuals[control]['cachedmessage'] = message
-           return
-         outmessage = self.translate_to_midi(message,(controller,control))
-         self.send_message(outmessage,'midi')
+           self._virtuals[control][message['item']]['cachedmessage'] = message 
+           if (device == message['item']): # The message is for the current selection
+             # now we need to get the actual control names to send it to midi
+             for realcontroller, realcontrol in self._links['virtual'][control][action].items():
+               outmessage = self.translate_to_midi(message,(realcontroller,realcontrol),action=action)
+               self.send_message(outmessage,'midi')
+         else:
+           outmessage = self.translate_to_midi(message,(controller,control),action=action)
+           self.send_message(outmessage,'midi')
        
-  def translate_to_midi(self,message,midicontrols):
+
+  
+  def get_midi_translation(self,source,value,midicontrols,action):
+    datamap = self._config[source]['datamap'].get(action,None)
+    if datamap is None:
+      return value
+    function = datamap.get('from_function',None)
+    if function is not None:
+      f = StringFunction(function)
+      return f(value)
+    elif datamap.get('map',None) is not None:
+      midimap = datamap['map']['midi']
+      itemmap = datamap['map'][source]
+      get_output = interp1d(midimap, itemmap)
+      return get_output(value)
+    else:
+      return value
+    
+  def translate_to_midi(self,message,midicontrols,action):
     output = dict()
-    print('midicontrols',midicontrols)
     control = self._config['controller']['controls'][midicontrols[1]]
     output['id'] = midicontrols[0]
     output['item'] = midicontrols[1]
-    print(control)
-    print('translating',message)
-    match control['type']:
-      case 'button':
-        #if message.get('value',None) is not None: output['value'] = bool(message['value']) 
-        output['value'] = message['data']['mute']
-      case 'fader':
-        output['value'] = int(min(message['data']['volume']*96,127)) # 96 = 0db
+    if message['data'].get(action, None) is not None:
+      output['value'] = self.get_midi_translation(message['source'],message['data'][action],midicontrols,action)
     return output
-
-  def translate_to_target(self,message):
+  
+  def get_target_translation(self,message,midicontrols,action):
+    # Action will be eg { 'pipewire' : { 'volume' : 'HDMI 5.1' }
+    backend, action = list(action.items())[0]
+    action, target = list(action.items())[0]
+    datamap = self._config[backend]['datamap'].get(action,None)
+    if datamap is None:
+      return message['value']
+    function = datamap.get('to_function',None)
+    if function is not None:
+      f = StringFunction(function)
+      return f(message['value'])
+    elif datamap.get('map',None) is not None:
+      midimap = datamap['map']['midi']
+      itemmap = datamap['map'][backend]
+      get_output = interp1d(itemmap, midimap)
+      return get_output(message['value'])
+    else:
+      return message['value']
+    
+  def translate_to_target(self,message,action):
     output = dict()
     control = self._config['controller']['controls'][message['item']]
-    match control['type']:
-      case 'button':
-        if message.get('value',None) is not None: output['value'] = bool(message['value']) 
-        if message.get('pressed',None) is not None: output['pressed'] = bool(message['pressed']) 
-      case 'fader':
-        if message.get('value',None) is not None: output['value'] = float(message['value'])/96.0 # 96 = 0db
+    # Translate the value
+    if message.get('value',None) is not None:
+      output['value'] = self.get_target_translation(message,control,action)
+    # Add other details if present.
+    if message.get('pressed') is not None:
+      output['pressed'] = bool(message['pressed']) 
     return output
 
 
@@ -190,4 +229,3 @@ class Linker:
               }
     message.update(messagedata)
     self._callback(message)
-    

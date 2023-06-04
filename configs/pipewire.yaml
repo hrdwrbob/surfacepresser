@@ -1,0 +1,6 @@
+# Core pipewire - will start integration and has volume mappin.
+pipewire:
+  datamap:
+    volume:
+      from_function: "int(min(x*96,127))" # scitools function string, where x is from midi (0-127) 
+      to_function: "x/96" # scitools function string, where x is from library and return is midi (0-127)

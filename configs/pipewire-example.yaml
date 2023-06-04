@@ -1,0 +1,23 @@
+
+pipewire:
+  datamap:
+    volume:
+      from_function: "int(min(x*96,127))" # scitools function string, where x is from midi (0-127) 
+      to_function: "x/96" # scitools function string, where x is from library and return is midi (0-127)
+    volume_mapped_example:
+      map: # This example map shows the mapping of the db on my fader to midi
+        midi:     [0  ,   4,  13,  21, 29,   46,  62,  69,  79, 96, 111, 127]
+        pipewire: [-60, -60, -50, -40, -30, -20, -10, -7.9, -5,  0,  +5, +12]
+        # The map is interpolated, so you need a minimum two values (0 and 127)
+  devices: # Device name map to nice human names
+    'ALSA plug-in [vban_desktop]': 'Desktop'
+    'vban': 'Desktop'
+    'ALSA plug-in [vban_mic_desktop]': 'DeskMic'
+    'alsa_card.pci-0000_04_00.1': 'HDMI 5.1'
+    'alsa_output.pci-0000_04_00.1.hdmi-surround': 'HDMI 5.1'
+    'alsa_output.usb-0d8c_USB_Sound_Device-00.iec958-stereo': 'LapMic'
+    'alsa_input.usb-Roland_Rubix22-00.analog-stereo': 'Mic In'
+    'alsa_output.pci-0000_06_00.4.analog-stereo': 'Outside'
+    'alsa_output.usb-Roland_Rubix22-00.analog-stereo': 'Wired HF'
+    'alsa_output.usb-SteelSeries_SteelSeries_Arctis_1_Wireless-00.analog-stereo': 'Wless HF'
+    'alsa_input.usb-SteelSeries_SteelSeries_Arctis_1_Wireless-00.mono-fallback': 'Wless HFmic'

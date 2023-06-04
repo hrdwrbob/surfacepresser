@@ -80,8 +80,8 @@ class FaderControl(LevelControl):
 
 class ButtonControl(Control):
   _state = dict()
-  # Start with true so it resets the light.
-  _state['light'] = True 
+  
+  _state['light'] = False
   _state['lockout'] = False
   _state['pressed'] = False
   _state['value'] = False
@@ -89,28 +89,29 @@ class ButtonControl(Control):
     self._light_style =  config.get('light','state')
     self._button_style = config.get('style','toggle')
     super().__init__(midicontrol = midicontrol,config=config)
-    self.light_update()
+    self.light_update(force=True)
+    
+    
 
 
-  def light_update(self):
+  def light_update(self,force=False):
     match(self._light_style):
+      case False:
+        self._light_switch(False,force)
       case "always_on":
-        self._light_switch(True)
+        self._light_switch(True,force)
       case "momentary":
-        self._light_switch(self._state['pressed'])
+        self._light_switch(self._state['pressed'],force)
       case "state":
-        self._light_switch(self._state['value'])
+        self._light_switch(self._state['value'],force)
 
 
-  def _light_switch(self,state):
-    if state is self._state['light']:
-      return
+  def _light_switch(self,state,force=False):
+    self._state['light'] = state
+    if state:
+      self._midicontrol.note_on(self._config['note'], 127)
     else:
-      self._state['light'] = state
-      if state:
-        self._midicontrol.note_on(self._config['note'], 127)
-      else:
-        self._midicontrol.note_on(self._config['note'], 0)
+      self._midicontrol.note_on(self._config['note'], 0)
 
   def set_value(self,value):
     self._state['value'] = value
@@ -133,16 +134,31 @@ class ButtonControl(Control):
       
        
     
-class RotaryControl(Control):
+class RotaryControl(LevelControl):
   pass
 
 
-class JogWheelControl(LevelControl):
- pass
+
+
+class JogWheelControl(Control):
+  def __init__(self, midicontrol = None,config = None) -> None:
+    super().__init__(midicontrol = midicontrol,config=config)
+  def recv_message(self,m):
+    if m.value == 65: 
+      self._state['direction'] = "1"
+    if m.value == 0: 
+      self._state['direction'] = "-1"
+
+  def msg_callback(self,message):
+    self.recv_message(message)
+    message = { 'item' : self._config['name'],
+                'id'   :  self._config['deviceid'] }
+    message['direction'] = self._state['direction']
+    return message
 
 class SliderControl(LevelControl):
   async def touch(self,midi):
-    # I'm assuming touch is the same for all sliders, this is probably not the case, because MIDI is a disaster.
+    # I'm assuming touch is the same for all faders, this is probably not the case, because MIDI is a disaster.
     if midi.velocity == 0:
       self.lockout = True
     elif midi.velocity == 127:
@@ -163,6 +179,7 @@ class BgrSegmentDisplay(Display):
   pass
 
 
+
 class XTOScribbleStrip (Display):
   _display_settings = dict()
   def set_text(self,text):
@@ -172,17 +189,96 @@ class XTOScribbleStrip (Display):
   def __init__(self, midicontrol = None,config = None) -> None:
     self._display_settings['color'] = Color.WHITE
     self._display_settings['invert'] = Invert.NONE
-    self._display_settings['characters'] = ""
+    self._display_settings['characters'] = "              "
     super().__init__(midicontrol = midicontrol,config=config)    
   
-  def update_display(self):
+  def update_display(self,message=None):
+     if message is not None:
+       self.set_color(message['color'])
+       self.set_invert(message['invert'])
+       self.set_text(message['value'])
      self._midicontrol.lcd_display_update(**self._display_settings)
   
-  def set_color(self,colorname: str):
-    color = getattr(Color,colorname.capitalize())
-    if color is not None:
-      self._display_settings['color'] = color
+  def set_invert(self,invert: bool):
+    if invert:
+      self._display_settings['invert'] = Invert.BOTH
+    else:
+      self._display_settings['invert'] = Invert.NONE
 
+
+  def set_color(self,colorname: str):
+    colorname = colorname.upper()
+    try:
+      color = Color[colorname]
+    except:
+      color = Color.WHITE
+    self._display_settings['color'] = color
+
+class XTOScribbleHalf(Display):
+  minion = True
+  def __init__(self,display : Display,location) -> None:
+    self._location = location
+    self._display = display
+    
+  def set_color(self,colorname: str):
+    self._display.set_color(colorname)
+
+  def set_text(self,text):
+    text = "{:^7}".format(text[:7])
+    if self._location == "top":
+      bottom = self._display._display_settings['characters'][7:14]
+      self._display._display_settings['characters'] = text + bottom
+    if self._location == "bottom":
+      top = self._display._display_settings['characters'][:7]
+      self._display._display_settings['characters'] = top + text
+
+  def update_display(self,message=None):
+    if message is not None:
+       self.set_color(message['color'])
+       self.set_invert(message['invert'])
+       self.set_text(message['value'])
+    self._display.update_display()
+
+     
+  def set_invert(self,invert: bool):
+    invertstate = self._display._display_settings['invert']
+    state = dict()
+    state['bottom'] = invertstate == Invert.BOTH or state == Invert.BOTTOM
+    state['top'] = invertstate == Invert.BOTH or state == Invert.TOP
+    mystate = state[self._location]
+    # I'm sure there's a better way, but here we are.
+    if self._location == 'top':
+      other = 'bottom'
+      otheron = Invert.BOTTOM
+      inverton = Invert.TOP
+    else:
+      other = 'top'
+      otheron = Invert.TOP
+      inverton = Invert.BOTTOM
+    otherstate = state[other]
+    if (invert == mystate):
+      return
+    elif otherstate and invert:
+      self._display._display_setting['invert'] = Invert.BOTH
+    elif otherstate and not invert:
+      self._display._display_setting['invert'] = otheron
+    elif not otherstate and not invert:
+      self._display._display_setting['invert'] = Invert.NONE
+    else:
+      self._display._display_setting['invert'] = inverton
+
+
+class XTOScribbleTop(XTOScribbleHalf):
+  def __init__(self,display) -> None:
+     super().__init__(display, location='top')   
+
+class XTOScribbleBottom(XTOScribbleHalf):
+  def __init__(self,display) -> None:
+    super().__init__(display, location='bottom')   
+    
+
+      
+  
 
    
 class MidiIntegration:
@@ -191,28 +287,24 @@ class MidiIntegration:
                'rotary' : RotaryControl,
                'level'  : LevelControl,
                'button'  : ButtonControl,
-               'jog_wheel' : JogWheelControl,
+               'jogwheel' : JogWheelControl,
                'behringer_segment' : BgrSegmentDisplay,
                'behringer_one_scribble' : XTOScribbleStrip,
-
+               'behringer_one_scribble_top' : XTOScribbleTop,
+               'behringer_one_scribble_bottom' : XTOScribbleBottom,
                
               }
   
     def __init__(self, config: dict,callback = None) -> None:
         self._controller = MidiController(config['midiname'],callback=callback)
         self._controller.reset()
-        #self.lcd_color = Color.CYAN
-        #self._controller.segment_display_update("")
-        #self._segment_lock = False
-        #self._display_lock_seconds = 0
+        self._lock = asyncio.Lock()
+        self._config = config
         self._controls = dict()
         self._displays = dict()
-        self._midimap = dict()
         displays = config.get('displays',dict())
         for display in displays.keys():
           displayconfig = displays[display]
-          displayconfig['name'] = display
-          displayconfig['deviceid'] = config['id']
           self._add_display(display,displayconfig)
         controls = config.get('controls',dict())
         for control in controls.keys():
@@ -222,18 +314,28 @@ class MidiIntegration:
           self._add_control(control,controlconfig)
 
     def _add_display(self,name,displayconfig):
-      newdisplay = self.classmap[displayconfig['type']](self._controller,displayconfig)
-      self._displays[name] = newdisplay
+      displayconfig['name'] = name
+      displayconfig['deviceid'] = self._config['id']
+      newdisplayclass = self.classmap[displayconfig['type']]
+      if getattr(newdisplayclass,'minion',False):
+        realdisplay = displayconfig.get('display',None)
+        if not isinstance(self._displays.get(realdisplay),Display):
+          self._add_display(realdisplay,self._config['displays'][realdisplay])
+        self._displays[name] = newdisplayclass(self._displays[realdisplay])
+      else:
+        newdisplay = newdisplayclass(self._controller,displayconfig)
+        self._displays[name] = newdisplay
 
     def _add_control(self,name,controlconfig):
       newcontrol = self.classmap[controlconfig['type']](self._controller,controlconfig)
+      print(name,controlconfig)
       self._controls[name] = newcontrol
 
 
     async def receive_message(self,message):
-      print("midi received",message)
-      if 'value' in message.keys() and message['item'] in self._controls.keys():
-        self._controls[message['item']].set_value(message['value'])
-      elif 'value' in message.keys() and message['item'] in self._displays.keys():
-        self._displays[message['item']].set_text(message['value'])
-      return
+      async with self._lock:
+        if 'value' in message.keys() and message['item'] in self._controls.keys():
+          self._controls[message['item']].set_value(message['value'])
+        elif 'value' in message.keys() and message['item'] in self._displays.keys():
+          self._displays[message['item']].update_display(message)
+        return

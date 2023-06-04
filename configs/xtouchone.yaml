@@ -1,0 +1,121 @@
+
+controller:
+  midiname: 'X-Touch One'
+  id: 'xtouch'
+  controls:
+    rotarybutton:
+      type: button
+      note: 0
+    time:
+      type: button
+      note: 1
+    master:
+      type: button
+      note: 2
+    select:
+      type: button
+      note: 3
+    mute:
+      type: button
+      note: 4
+    solo:
+      type: button
+      note: 5
+    rec:
+      type: button
+      note: 6
+    f1:
+      type: button
+      note: 7
+    f2:
+      type: button
+      note: 8
+    f3:
+      type: button
+      note: 9
+    f4:
+      type: button
+      note: 10
+    f5:
+      type: button
+      note: 11
+    f6:
+      type: button
+      note: 12
+    marker:
+      type: button
+      note: 13
+    nudge:
+      type: button
+      note: 14
+    cycle:
+      type: button
+      note: 15
+    drop:
+      type: button
+      note: 16
+    replace:
+      type: button
+      note: 17
+    click:
+      type: button
+      note: 18
+    solo:
+      type: button
+      note: 19
+    rew:
+      type: button
+      note: 20
+    ffwd:
+      type: button
+      note: 21
+    stop:
+      type: button
+      note: 22
+    play:
+      type: button
+      note: 23
+    rec:
+      type: button
+      note: 24
+    fader_prev:
+      type: button
+      note: 25
+    fader_next:
+      type: button
+      note: 26
+    chan_prev:
+      type: button
+      note: 27
+      style: momentary
+      light: off 
+    chan_next:
+      type: button
+      note: 28
+      style: momentary
+      light: off
+    scrub:
+      type: button
+      note: 29
+    rotary:
+      type: rotary
+      control: 80
+    jogwheel:
+      type: jogwheel
+      control: 88
+    fader:
+      type: fader
+      note: 110
+      control: 70
+  displays:
+    scribble_strip:
+      type: behringer_one_scribble
+    scribble_strip_top:
+      type: behringer_one_scribble_top
+      display: scribble_strip
+    scribble_strip_bottom:
+      type: behringer_one_scribble_bottom
+      display: scribble_strip
+    segment_display:
+      type: behringer_segment
+   

@@ -54,26 +54,41 @@ class Invert(Enum):
 
 #TODO Make them accept either Enum tuples or ints.
 class MidiController:
-    def __init__(self, in_name: str,out_name: str = None,callback = None) -> None:
+    def __init__(self, in_name: str,out_name: str = None,callback = None,mode='normal') -> None:
+        if mode == 'list':
+            print("MIDI inputs:")
+            for input in mido.get_input_names():
+                print("> "+input)
+            print("MIDI outputs:")    
+            for output in mido.get_input_names():
+                print("> "+output)
+            return
+
         # This is because I found that because of the way windows works,
         # you can end up with a 'device 1' input and a 'device 2' output that is really the same device.
-        print(in_name)
         self._name = self.find_midi_input(in_name)
+        logging.debug("Found midi device:" + self._name)
         self.midimap = dict()
         self._external_callback = None
         if out_name is None:
             out_name = in_name
+        midicallback = self._midi_message_in
+        if mode == 'test':
+            midicallback = self._midi_callback_test
         # Note - this is the callback for the filtered event, not the rawmidi event
         if callback is not None:
             logging.debug("Adding callbacks" + str(callback))
             self._external_callback = callback
-            self._port_in = mido.open_input(self._name, callback = self._midi_message_in )
+            self._port_in = mido.open_input(self._name, callback = midicallback )
             self._port_out = mido.open_output(self.find_midi_output(out_name))
         else:
             logging.debug("No callback provided - starting without them")
-            self._port_in = mido.open_input(self._name, callback = self._midi_message_in)
+            self._port_in = mido.open_input(self._name, callback = midicallback)
             self._port_out = mido.open_output(self.find_midi_output(out_name))
 
+    def _midi_callback_test(self,m: mido.Message):
+      print(m)
+          
     def _midi_message_in(self,m: mido.Message):
       typemap = {
         'control_change': ['control','control'],

@@ -1,0 +1,50 @@
+includes:
+   - xtouchone.yaml
+   - pipewire-example.yaml
+
+link:
+  virtual:
+    volin:
+      targets:
+        - target: 'Wless HFmic'
+          text: 'wls HF'
+        - target: 'DeskMic'
+      system: pipewire
+      display:
+        xtouch:
+          scribble_strip_top
+    volout:
+      targets:
+        - target: 'HDMI 5.1'
+          color: green
+          text: "HDMI"
+        - target: 'Wless HF'
+          text: 'WlsHF'
+          color: blue
+        - target: 'Wired HF'
+          text: 'Wrd HF'
+          color: cyan
+      system: pipewire
+      display:
+        xtouch:
+          scribble_strip_bottom
+  xtouch: 
+    fader:
+      virtual:
+        volume: volout
+    scrub: 
+      virtual:
+         mute: volout
+    chan_next:
+      virtual:
+        next: volout
+    chan_prev:
+      virtual:
+        prev: volout
+    rotary:
+      virtual:
+        volume: volin
+    rotarybutton: 
+      virtual:
+         next: volin
+

@@ -45,10 +45,8 @@ class PipewireService:
     logging.warning("Created pipewire Subprocess")
     while True:
        thisoutput = await pwdump.stdout.readline()
-       #logging.warning("Pipewire Got data portion: " + thisoutput.decode('utf-8'))
        output += thisoutput.decode('utf-8')
        if ']\n' == thisoutput.decode('utf-8'):
-         logging.info("Pipewire Got data")
          self.callback(self._parse_json(output))
          output=""
 
@@ -91,7 +89,7 @@ class PipewireService:
       if node['info'] is None:
         event['changetype'] = 'delete'
         event['nodeid'] = node['id']
-        self._delete_node(node['id'])
+        self._node_delete(node['id'])
         returnval.append(event)
         continue
         
@@ -110,11 +108,20 @@ class PipewireService:
         self._node_add(node) # new node
         event['changetype'] = 'new'
         event['data'] = nodelist[node['id']].simple_dict()
+        event['item'] = event['data'].get('name','unknown')
 
       else:
         # Changed node, build a change object
         oldnode = nodelist[node['id']].simple_dict()
+
+        # Because the links are seperate objects, we retain the links if an object is changed.
+        # If a link is created or removed, it will remove or create the link object, which should
+        # then update the node.
+        oldnodeinlinks = nodelist[node['id']].inlinks
+        oldnodeoutlinks = nodelist[node['id']].outlinks
         self._node_add(node)
+        self.pwnodes[node['id']].outlinks = oldnodeoutlinks
+        self.pwnodes[node['id']].inlinks = oldnodeinlinks
         newnode = nodelist[node['id']].simple_dict()
         event['changetype'] = 'change'
         event['nodeid'] = node['id']
@@ -129,6 +136,11 @@ class PipewireService:
     return returnval
 
   def _node_delete(self,id):
+    # if it's a link node, we need to remove the links as well.
+    if self.pwlinks[id] is not None:
+      node =self.pwlinks[node['id']] 
+      self.pwnodes[node['info']['output-node-id']].deloutlink(node['info']['input-node-id'])
+      self.pwnodes[node['info']['input-node-id']].delinlink(node['info']['output-node-id'])
     # IDs are unique so we can take a nice shortcut here. 
     for pwlist in (self.pwsinks, self.pwsources, self.pwdevices, self.pwnodes, self.pwlinks, self.pwports):
       if id in pwlist.keys():
@@ -224,12 +236,9 @@ class PipewireNode:
     
   def setmute(self,mute):
     props = get_nested_dict(self.data,('info','params','Props'))[0]
-    print(props)
-    print(props['softMute'],mute)
     if props['softMute'] != mute:
       props['softMute'] = mute
-      print(props)
-      print(subprocess.run(['pw-cli','set-param',str(self.pwid),'Props',json.dumps(props)],capture_output=True,text=True))
+      subprocess.run(['pw-cli','set-param',str(self.pwid),'Props',json.dumps(props)],capture_output=True,text=True)
 	
   def simple_dict(self):
     simpledict = dict()
@@ -252,7 +261,15 @@ class PipewireNode:
   def addoutlink(self,link):
     if link not in self.outlinks:
       self.outlinks.append(link)
+
+  def deloutlink(self,link):
+    if link not in self.outlinks:
+      self.outlinks.remove(link)
   
+  def delinlink(self,link):
+    if link not in self.outlinks:
+      self.inlinks.remove(link)
+
   def addinlink(self,link):
     if link not in self.inlinks:
       self.inlinks.append(link)
