@@ -97,7 +97,6 @@ class Linker:
     virtdetails = self._virtuals[virttarget]
     # What is our current value / are we changing
     numtargets = len(virtdetails['targets'])
-    print("numtargets:",numtargets)
     index = virtdetails.get('_current',-1)
     if index == -1:
       self.update_virt_target(virttarget,index)
@@ -175,8 +174,11 @@ class Linker:
     elif datamap.get('map',None) is not None:
       midimap = datamap['map']['midi']
       itemmap = datamap['map'][source]
-      get_output = interp1d(midimap, itemmap)
-      return get_output(value)
+      get_output = interp1d(itemmap, midimap)
+      midivalue =  int(get_output(value))
+      print("Message:",source,midicontrols,action)
+      print("input",value,"midivalue:",midivalue)
+      return midivalue
     else:
       return value
     
@@ -203,8 +205,8 @@ class Linker:
     elif datamap.get('map',None) is not None:
       midimap = datamap['map']['midi']
       itemmap = datamap['map'][backend]
-      get_output = interp1d(itemmap, midimap)
-      return get_output(message['value'])
+      get_output = interp1d(midimap, itemmap)
+      return float(get_output(message['value']))
     else:
       return message['value']
     

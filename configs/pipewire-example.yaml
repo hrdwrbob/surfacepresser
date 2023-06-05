@@ -7,7 +7,9 @@ pipewire:
     volume_mapped_example:
       map: # This example map shows the mapping of the db on my fader to midi
         midi:     [0  ,   4,  13,  21, 29,   46,  62,  69,  79, 96, 111, 127]
-        pipewire: [-60, -60, -50, -40, -30, -20, -10, -7.9, -5,  0,  +5, +12]
+        # note the db line doesn't do anything, it's to show the levels.
+        db      : [-60, -60, -50, -40, -30, -20, -10, -7.9, -5,  0,  +5, +12]
+        pipewire: [0,   .08, .10, .15, .19 ,.31, .45, .51, .57,.68, .83,1.00]
         # The map is interpolated, so you need a minimum two values (0 and 127)
   devices: # Device name map to nice human names
     'ALSA plug-in [vban_desktop]': 'Desktop'

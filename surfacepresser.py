@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import logging
 logging.basicConfig(format='%(asctime)s %(message)s', encoding='utf-8', level=logging.DEBUG)
 #import threading
@@ -103,6 +104,6 @@ async def main():
     modules['pipewire'] = PipewireService(devicemap,callback=callback)
     asyncio.create_task(modules['pipewire'].realtime_start())
 
-  loops_brother.run_forever()
+  await asyncio.wait(asyncio.all_tasks())
   
 asyncio.run(main())
